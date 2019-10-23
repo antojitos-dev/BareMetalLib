@@ -21,6 +21,7 @@
 #include "utilities/make_index_sequence.hpp"
 #include "utilities/make_integer_sequence.hpp"
 #include "utilities/max.hpp"
+#include "utilities/memory.hpp"
 #include "utilities/min.hpp"
 #include "utilities/move.hpp"
 #include "utilities/new.hpp"
