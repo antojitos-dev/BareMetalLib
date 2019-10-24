@@ -35,7 +35,7 @@ namespace bml {
 		typedef Alloc::difference_type difference_type;
 		typedef Alloc::size_type size_type;
 		typedef bml::false_type propagate_on_container_copy_assignment;
-		typedef bml::false_type propagate_on_container_move_assignment;
+		typedef Alloc::propagate_on_container_move_assignment propagate_on_container_move_assignment;
 		typedef bml::false_type propagate_on_container_swap;
 		typedef Alloc::is_always_equal is_always_equal;
 
