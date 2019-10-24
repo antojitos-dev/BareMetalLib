@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2019 Colin Vanden Heuvel
+// Copyright (c) 2019 Charles Ricchio
 //
 // BareMetalLib is based on libc++ (https://libcxx.llvm.org/).
 // 
@@ -28,6 +28,7 @@ namespace bml {
 		static ::size_t max_size = 0;
 	public:
 		typedef bml::true_type is_always_equal;
+		typedef bml::true_type propagate_on_container_move_assignment;
 		typedef T value_type;
 		typedef ::size_t size_type;
 		typedef ::ptrdiff_t difference_type;
