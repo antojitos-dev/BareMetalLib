@@ -49,10 +49,17 @@ namespace bml {
 		}
 		
 		
+				
 	private:
 		virtual void* do_allocate(::ptrdiff_t bytes, ::ptrdiff_t alignment) noexcept = 0;
 		virtual void do_deallocate(void* p, ::ptrdiff_t bytes, ::ptrdiff_t alignment) = 0;
 		virtual bool do_is_equal(const memory_resource& other) const noexcept = 0;
+		
+		// Used by the implementation to set the preferred allocation size
+		CONSTEXPR_ATTR  virtual ::ptrdiff_t __get_alloc_size() {
+			// Aim for 4KB memory allocations
+			const ::ptrdiff_t ALLOC_BLOCK_SIZE = 4096;
+		}
 		
 		// Used by the implementation to implement is_equal
 		virtual bool __allocates_globally = false;

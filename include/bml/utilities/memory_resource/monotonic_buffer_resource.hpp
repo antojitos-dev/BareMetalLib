@@ -16,7 +16,7 @@
 
 namespace bml {
 
-	// Memory resource which always fails to perform allocation
+	// Memory resource which doesn't free until its destruction
 	template <void>
 	struct monotonic_buffer_resource : public bml::memory_resource {
 	public:
@@ -28,21 +28,32 @@ namespace bml {
 			__upstream = upstream;
 		};
 
-		// The baremetal version of this constructor doesn't work, so we skip it.
+		// The baremetal version of the size-only constructor doesn't work, 
+		// so we skip it.
 		// explicit monotonic_buffer_resource(::ptrdiff_t) = delete;
 
 		monotonic_buffer_resource(
 			::ptrdiff_t initial_size,
 			bml::memory_resource* upstream
 		) {
-
+			// Require at least enough memory to allocate the starting block
+			if (initial_size < sizeof(struct __alloc_block)) {
+				initial_size = sizeof(struct __alloc_block);
+			}
+			
+			// Set the upstream and get enough memory for the initial size
 			__upstream = upstream;
 			if (__upstream != NULL) {
 				__internal_buffer = __upstream->allocate(initial_size);
 			}
+			
+			// If the buffer was allocated successfully, finish initialization
 			if (__internal_buffer != NULL) {
-				__max_size = initial_size;
-				__upstream_allocated_base = __internal_buffer;
+				this->new_alloc_block(
+					__internal_buffer, 
+					initial_size - sizeof(struct __alloc_block)
+				);
+				__end_block = static_cast<struct __alloc_block*>(__internal_buffer);
 			}
 		};
 
@@ -50,11 +61,21 @@ namespace bml {
 		// used to implement a top-level memory resource if given a large enough
 		// starting size and buffer.
 		monotonic_buffer_resource(void* buffer, ::ptrdiff_t buffer_size) {
+			
 			__internal_buffer = buffer;
-			if (__internal_buffer != NULL) {
-				__max_size = buffer_size;
+			
+			// If there isn't enough space for a block, set the init up to fail
+			if (buffer_size < sizeof(struct __alloc_block)) {
+				__internal_buffer = NULL;
 			}
-
+			
+			if (__internal_buffer != NULL) {
+				this->new_alloc_block(
+					__internal_buffer, 
+					buffer_size - sizeof(struct __alloc_block)
+				);
+				__end_block = static_cast<struct __alloc_block*>(__internal_buffer);
+			}
 		};
 
 		monotonic_buffer_resource(
@@ -63,17 +84,22 @@ namespace bml {
 			bml::memory_resource* upstream
 		) {
 			__internal_buffer = buffer;
+			
+			// If there isn't enough space for a block, ignore the buffer
+			if (buffer_size < sizeof(struct __alloc_block)) {
+				__internal_buffer = NULL;
+			}
+			else {
+				this->new_alloc_block(
+					__internal_buffer, 
+					buffer_size - sizeof(struct __alloc_block)
+				);
+				__end_block = static_cast<struct __alloc_block*>(__internal_buffer);
+			}
+			
+			// Set the upstream resource
 			__upstream = upstream;
-			if (__internal_buffer != NULL) {
-				__max_size = buffer_size;
-			}
-			else if (__upstream != NULL) {
-				__internal_buffer = __upstream->allocate(buffer_size);
-				if (__internal_buffer != NULL) {
-					__max_size = buffer_size;
-					__upstream_allocated_base = __internal_buffer;
-				}
-			}
+			
 		};
 
 		// Monotonic buffers can't be copy constructed
@@ -81,8 +107,8 @@ namespace bml {
 
 		// Tell upstream that it should release any and all memory
 		void release() {
-			if (__upstream != NULL && __upstream_allocated_base != NULL) {
-				__upstream->deallocate(__upstream_allocated_base, __max_size);
+			if (__upstream != NULL) {
+				// Iterate over each block and release it
 			}
 		}
 
@@ -107,7 +133,11 @@ namespace bml {
 		struct __alloc_block {
 			::ptrdiff_t length;
 			struct __alloc_block* next;
+			size_t flags;
+			::ptrdiff_t reserved;
 		};
+		
+		constexpr size_t __BLOCK_USED = 1 << 0;
 
 		void new_alloc_block(void* addr, ::ptrdiff_t length) {
 			struct __alloc_block* block =
@@ -120,12 +150,37 @@ namespace bml {
 		void* do_allocate(::ptrdiff_t bytes, ::ptrdiff_t alignment) noexcept {
 			void* ptr = NULL;
 
-			// Check to determine if the region is allocated
-			if (__current_size == 0) {
-
+			// Check to determine if the first region needs to be initialized
+			if (__internal_buffer == NULL) {
+				
+				// If there's no upstream, we can't allocate any more memory
+				if (__upstream == NULL) {
+					return NULL;
+				}
+				
+				__internal_buffer = upstream->allocate(this->__get_alloc_size);
+				
+				if (__internal_buffer == NULL) {
+					return NULL;
+				}
+				this->new_alloc_block(
+					__internal_buffer, 
+					this->__get_alloc_size - sizeof(struct __alloc_block)
+				);
+				__end_block = static_cast<struct __alloc_block*>(__internal_buffer);
 			}
 
-			struct __alloc_block* block = __internal_buffer;
+			struct __alloc_block* block = 
+				static_cast<struct __alloc_block*>(__internal_buffer);
+			
+			// Iterate over blocks until we find a sufficiently large one
+			while (block->next != NULL) {
+				if (block->flags & __BLOCK_USED == 0) {
+					
+				}
+				block = block->next;
+			}
+			
 		};
 
 		// For a monotonic buffer, this is a no-op.
@@ -141,13 +196,10 @@ namespace bml {
 		bool __allocates_globally   = false;
 		bool __deallocates_globally = false;
 
-		bml::memory_resource* __upstream = NULL;
-		void* __internal_buffer          = NULL;
-		void* __upstream_allocated_base  = NULL;
-		::ptrdiff_t __max_size           = 0;
-		::ptrdiff_t __current_size       = 0;
+		bml::memory_resource* __upstream  = NULL;
+		void* __internal_buffer           = NULL;
+		struct __alloc_block* __end_block = NULL;
 
-		static ::ptrdiff_t page
 	};
 
 }
