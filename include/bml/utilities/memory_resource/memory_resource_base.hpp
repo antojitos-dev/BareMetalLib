@@ -12,7 +12,7 @@
 
 #pragma once
 
-"type_traits/alignment_of.hpp"
+#include "../type_traits/alignment_of.hpp"
 
 #if (__cplusplus > 201703L) // newer than (but not including) C++17
 	#define NODISCARD_ATTR [[nodiscard]]
@@ -24,7 +24,6 @@
 
 namespace bml {
 
-	template <void>
 	struct memory_resource {
 	public:
 		virtual ~memory_resource() = 0;
@@ -62,13 +61,7 @@ namespace bml {
 		}
 		
 		// Used by the implementation to implement is_equal
-		virtual bool __allocates_globally = false;
-		virtual bool __deallocates_globally = false;
+		const bool __allocates_globally = false;
+		const bool __deallocates_globally = false;
 	};
-
-	// Pure virtual destructors can't be defined inline
-	template <void>
-	memory_resource::~memory_resource() {
-		;
-	}
 }
