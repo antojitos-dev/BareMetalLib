@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <stdint.h>
 #include "memory_resource_base.hpp"
 
 namespace bml {
@@ -28,7 +29,7 @@ namespace bml {
 			__upstream = upstream;
 		};
 
-		// The baremetal version of the size-only constructor doesn't work, 
+		// The baremetal version of the size-only constructor doesn't work,
 		// so we skip it.
 		// explicit monotonic_buffer_resource(::ptrdiff_t) = delete;
 
@@ -40,17 +41,17 @@ namespace bml {
 			if (initial_size < sizeof(struct __alloc_block)) {
 				initial_size = sizeof(struct __alloc_block);
 			}
-			
+
 			// Set the upstream and get enough memory for the initial size
 			__upstream = upstream;
 			if (__upstream != NULL) {
 				__internal_buffer = __upstream->allocate(initial_size);
 			}
-			
+
 			// If the buffer was allocated successfully, finish initialization
 			if (__internal_buffer != NULL) {
 				this->new_alloc_block(
-					__internal_buffer, 
+					__internal_buffer,
 					initial_size - sizeof(struct __alloc_block)
 				);
 				__end_block = static_cast<struct __alloc_block*>(__internal_buffer);
@@ -61,17 +62,17 @@ namespace bml {
 		// used to implement a top-level memory resource if given a large enough
 		// starting size and buffer.
 		monotonic_buffer_resource(void* buffer, ::ptrdiff_t buffer_size) {
-			
+
 			__internal_buffer = buffer;
-			
+
 			// If there isn't enough space for a block, set the init up to fail
 			if (buffer_size < sizeof(struct __alloc_block)) {
 				__internal_buffer = NULL;
 			}
-			
+
 			if (__internal_buffer != NULL) {
 				this->new_alloc_block(
-					__internal_buffer, 
+					__internal_buffer,
 					buffer_size - sizeof(struct __alloc_block)
 				);
 				__end_block = static_cast<struct __alloc_block*>(__internal_buffer);
@@ -84,22 +85,22 @@ namespace bml {
 			bml::memory_resource* upstream
 		) {
 			__internal_buffer = buffer;
-			
+
 			// If there isn't enough space for a block, ignore the buffer
 			if (buffer_size < sizeof(struct __alloc_block)) {
 				__internal_buffer = NULL;
 			}
 			else {
 				this->new_alloc_block(
-					__internal_buffer, 
+					__internal_buffer,
 					buffer_size - sizeof(struct __alloc_block)
 				);
 				__end_block = static_cast<struct __alloc_block*>(__internal_buffer);
 			}
-			
+
 			// Set the upstream resource
 			__upstream = upstream;
-			
+
 		};
 
 		// Monotonic buffers can't be copy constructed
@@ -136,12 +137,12 @@ namespace bml {
 			size_t flags;
 			::ptrdiff_t reserved;
 		};
-		
+
 		constexpr size_t __BLOCK_USED = 1 << 0;
 
 		void new_alloc_block(void* addr, ::ptrdiff_t length) {
 			struct __alloc_block* block =
-				reinterpret_cast<struct __alloc_block*>(addr);
+				static_cast<struct __alloc_block*>(addr);
 
 			block->length = length;
 			block->next = NULL;
@@ -152,35 +153,76 @@ namespace bml {
 
 			// Check to determine if the first region needs to be initialized
 			if (__internal_buffer == NULL) {
-				
+
 				// If there's no upstream, we can't allocate any more memory
 				if (__upstream == NULL) {
 					return NULL;
 				}
-				
-				__internal_buffer = upstream->allocate(this->__get_alloc_size);
-				
+
+				__internal_buffer = __upstream->allocate(this->__get_alloc_size());
+
 				if (__internal_buffer == NULL) {
 					return NULL;
 				}
 				this->new_alloc_block(
-					__internal_buffer, 
-					this->__get_alloc_size - sizeof(struct __alloc_block)
+					__internal_buffer,
+					this->__get_alloc_size() - sizeof(struct __alloc_block)
 				);
 				__end_block = static_cast<struct __alloc_block*>(__internal_buffer);
 			}
 
-			struct __alloc_block* block = 
+			struct __alloc_block* block =
 				static_cast<struct __alloc_block*>(__internal_buffer);
-			
+
+			struct __alloc_block* selected = NULL;
+
 			// Iterate over blocks until we find a sufficiently large one
 			while (block->next != NULL) {
+				// If this block is free...
 				if (block->flags & __BLOCK_USED == 0) {
-					
+					if (block->length > (bytes + alignment)) {
+						selected = block;
+						break;
+					}
 				}
 				block = block->next;
 			}
-			
+
+			// If we didn't find a valid block, we need to allocate more memory.
+			if (selected == NULL) {
+				// Figure out how many times the normal allocation size is
+				// necessary to fit the region.
+				::ptrdiff_t multiple = 1;
+				multiple += (bytes + alignment +
+					sizeof(struct __alloc_block)) / this->__get_alloc_size();
+				__end_block->next = __upstream->allocate(
+					this->__get_alloc_size() * multiple
+				);
+
+				// If the new end block is NULL, allocation has failed.
+				if (__end_block->next == NULL) {
+					return NULL;
+				}
+
+				this->new_alloc_block(
+					__end_block->next, this->__get_alloc_size() * multiple
+				);
+
+				__end_block = __end_block->next;
+				selected = __end_block;
+			}
+
+			// If there's enough memory left, split the block
+			// ... TODO
+
+			// Get the base address of the block
+			::intptr_t base = reinterpret_cast<::intptr_t>(selected);
+			selected += sizeof(struct __alloc_block);
+
+			// Align the address
+			base += (base % alignment) ? alignment - (base % alignment) : 0;
+
+			return base;
 		};
 
 		// For a monotonic buffer, this is a no-op.
