@@ -65,3 +65,7 @@ namespace bml {
 		const bool __deallocates_globally = false;
 	};
 }
+
+// Undefs to avoid namespace pollution
+#undef NODISCARD_ATTR
+#undef CONSTEXPR_ATTR

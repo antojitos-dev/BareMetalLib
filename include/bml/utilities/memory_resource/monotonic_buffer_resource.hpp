@@ -18,7 +18,7 @@
 namespace bml {
 
 	// Memory resource which doesn't free until its destruction
-	template <void>
+	template <typename T = void>
 	struct monotonic_buffer_resource : public bml::memory_resource {
 	public:
 		// The baremetal version of this allocator can't be default constructed,
@@ -211,9 +211,9 @@ namespace bml {
 				__end_block = __end_block->next;
 				selected = __end_block;
 			}
-
-			// If there's enough memory left, split the block
-			// ... TODO
+			
+			// Mark the block as occupied
+			selected->flags |= __BLOCK_USED;
 
 			// Get the base address of the block
 			::intptr_t base = reinterpret_cast<::intptr_t>(selected);
@@ -222,6 +222,21 @@ namespace bml {
 			// Align the address
 			base += (base % alignment) ? alignment - (base % alignment) : 0;
 
+			// If there's enough memory left, split the block before returning
+			::ptrdiff_t remaining = selected->length - (bytes + alignment);
+			if (remaining >= __BLOCK_SPLIT_SIZE) {
+				::intptr_t split_base = base + bytes + alignment;
+				this->new_alloc_block(
+					split_base, 
+					selected->length - (bytes + alignment + sizeof(struct __alloc_block))
+				);
+				struct __alloc_block* old_next = selected->next;
+				struct __alloc_block* split_block =
+					reinterpret_cast<struct __alloc_block*>(split_base);
+				split_block->next = old_next;
+				selected->next = split_block;
+			}
+			
 			return base;
 		};
 
@@ -237,7 +252,9 @@ namespace bml {
 
 		bool __allocates_globally   = false;
 		bool __deallocates_globally = false;
-
+		
+		// Minimum required space to justify a block split
+		constexpr ::ptrdiff_t __BLOCK_SPLIT_SIZE = 512 + sizeof(struct __alloc_block);
 		bml::memory_resource* __upstream  = NULL;
 		void* __internal_buffer           = NULL;
 		struct __alloc_block* __end_block = NULL;
